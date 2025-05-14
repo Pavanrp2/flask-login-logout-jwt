@@ -50,17 +50,22 @@ def login_user():
     try:
         cursor = connection.cursor()
         cursor.execute("""
-        select * from users
-        where name = %s and password = %s""", (name, password))
+        select password from users
+        where name = %s""", (name,))
         result = cursor.fetchone()
 
         if result:
-            return {"message": "User Logged In!"}
+            stored_password = result[0]
+            if stored_password == password:
+                return {"message": "User Logged In!"}
+
+            else:
+                return {"message": "Wrong Password"}
         else:
-            return {"message": "Login Failed"}
+            return {"message": "User not found"}
 
     except psycopg.Error as e:
-        print('error:', {e})
+        print('error:',e)
 
     finally:
         cursor.close()

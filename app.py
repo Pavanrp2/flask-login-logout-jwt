@@ -1,8 +1,12 @@
+import psycopg2
 from flask import Flask, request, jsonify
 from db_config import connect_db
 from schema import create_table
+from _datetime import datetime, timedelta, timezone
+import jwt
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'pavan0011'
 
 @app.route('/register', methods = ['POST'])
 def register_user():
@@ -27,41 +31,6 @@ def register_user():
 
     except psycopg2.Error as e:
         print('error:', {e})
-
-    finally:
-        cursor.close()
-        connection.close()
-
-
-@app.route('/login', methods=['POST'])
-def login_user():
-    data = request.get_json()
-    name = data.get('name')
-    password = data.get('password')
-
-    if not all([name, password]):
-        return {"error": "All fields are required"}
-
-    connection = connect_db()
-    cursor = connection.cursor()
-    try:
-        cursor.execute("""
-        select password from users
-        where name = %s""", (name,))
-        result = cursor.fetchone()
-
-        if result:
-            stored_password = result[0]
-            if stored_password == password:
-                return {"message": "User Logged In!"}
-
-            else:
-                return {"message": "Wrong Password"}
-        else:
-            return {"message": "User not found"}
-
-    except psycopg.Error as e:
-        print('error:',e)
 
     finally:
         cursor.close()
@@ -111,6 +80,78 @@ def update_user(id_no):
     finally:
         cursor.close()
         connection.close()
+
+
+@app.route('/login', methods=['POST'])
+def login_user():
+    data = request.get_json()
+    name = data.get('name')
+    password = data.get('password')
+
+    if not all([name, password]):
+        return {"error": "All fields are required"}
+
+    connection = connect_db()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+        select id_no, password from users
+        where name = %s""", (name,))
+        result = cursor.fetchone()
+
+        if result:
+            userid, stored_password = result
+            if stored_password == password:
+                playload = {
+                    'user_id': userid,
+                    'exp': datetime.now(timezone.utc) + timedelta(minutes=30)
+                }
+                token = jwt.encode(playload, app.config['SECRET_KEY'], algorithm='HS256')
+
+                cursor.execute("UPDATE users SET tokens = %s WHERE id_no = %s", (token, userid))
+                connection.commit()
+                return {"message": "User Logged In!"}
+
+            else:
+                return {"message": "Wrong Password"}
+        else:
+            return {"message": "User not found"}
+
+    except psycopg2.Error as e:
+        error_msg = str(e)
+        print('Database error:', error_msg)
+        return {"error": error_msg}
+
+    finally:
+        cursor.close()
+        connection.close()
+
+@app.route('/logout/<int:id_no>', methods=['POST'])
+def logout_user(id_no):
+    connection = connect_db()
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""select * from users where id_no = %s""", (id_no,))
+        result = cursor.fetchone()
+
+        if result:
+            userid = result[0]
+
+            cursor.execute("""update users set tokens = NULL where id_no = %s""", (id_no,))
+            connection.commit()
+            return {"message": "User Logged Out!"}
+
+        else:
+            return {"Error": "Invalid Token"}
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+    finally:
+        cursor.close()
+        connection.close()
+
 
 
 

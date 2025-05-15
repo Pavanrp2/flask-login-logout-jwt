@@ -1,5 +1,4 @@
-from flask import Flask, request
-
+from flask import Flask, request, jsonify
 from db_config import connect_db
 from schema import create_table
 
@@ -44,11 +43,8 @@ def login_user():
         return {"error": "All fields are required"}
 
     connection = connect_db()
-    if not connection:
-        return {"error": "DB Connection Failed"}
-
+    cursor = connection.cursor()
     try:
-        cursor = connection.cursor()
         cursor.execute("""
         select password from users
         where name = %s""", (name,))
@@ -66,6 +62,51 @@ def login_user():
 
     except psycopg.Error as e:
         print('error:',e)
+
+    finally:
+        cursor.close()
+        connection.close()
+
+
+@app.route('/user/<int:id_no>', methods=['GET'])
+def get_user(id_no):
+    connection = connect_db()
+    cursor = connection.cursor()
+    try:
+
+        cursor.execute("""select id_no, name, email from users where id_no = %s""", (id_no,))
+        result = cursor.fetchone()
+
+        if result:
+            user = {"id_no": result[0], "name": result[1], "email": result[2]}
+            return jsonify(user)
+        else:
+            return {"message": "User not found"}
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+    finally:
+        cursor.close()
+        connection.close()
+
+
+@app.route('/update/<int:id_no>', methods=['PUT'])
+def update_user(id_no):
+    connection = connect_db()
+    cursor = connection.cursor()
+
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        email = data.get('email')
+        number = data.get('number')
+
+        cursor.execute("""update users set name = %s, email = %s, number = %s where id_no = %s""", (name, email, number, id_no))
+        connection.commit()
+        return {"message": "User Updated"}
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
     finally:
         cursor.close()

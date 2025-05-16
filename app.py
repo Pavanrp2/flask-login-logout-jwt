@@ -1,12 +1,47 @@
+from functools import wraps
 import psycopg2
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 from db_config import connect_db
 from schema import create_table
 from _datetime import datetime, timedelta, timezone
 import jwt
+from flask_session import Session
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'pavan0011'
+
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_KEY_PREFIX'] = 'session:'
+Session(app)
+
+# Token Middleware
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                token = auth_header.split(" ")[1]
+            except IndexError:
+                return jsonify({'error': 'Invalid token format'}), 401
+
+        if not token:
+            return jsonify({'error': 'Token is missing'}), 401
+
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = data['user_id']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+
+        return f(user_id, *args, **kwargs)
+    return decorated
 
 @app.route('/register', methods = ['POST'])
 def register_user():
@@ -151,9 +186,6 @@ def logout_user(id_no):
     finally:
         cursor.close()
         connection.close()
-
-
-
 
 
 if __name__ == '__main__':
